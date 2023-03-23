@@ -40,25 +40,11 @@ export class GqlAction {
       }
 
       if (query) {
-        for (const [key, value] of Object.entries(this.gqlData.fragments)) {
-          if (query.indexOf(`...${key}`) >= 0) {
-            let fragment: string | undefined;
-            if (utils.isString(value)) {
-              fragment = value;
-            } else {
-              const result = await value(context);
-              if (result) {
-                fragment = result;
-              } else {
-                const message = `query fragment ${key} not found`;
-                userInteractionProvider.showWarnMessage?.(message);
-                log.warn(message);
-              }
-            }
-            if (fragment) {
-              query = utils.toMultiLineString([query, fragment]);
-            }
-          }
+        const usedFragmentsMap = await this.extractUsedFragments(context, query);
+        const fragmentLines = Array.from(usedFragmentsMap, ([_key, value]) => value);
+
+        if (fragmentLines.length > 0) {
+          query = utils.toMultiLineString([query, ...fragmentLines]);
         }
         const gqlRequestBody: GqlPostRequest = {
           query,
@@ -74,4 +60,48 @@ export class GqlAction {
     }
     return true;
   }
+
+  /**
+   * Return all used fragments
+   */
+  private async extractUsedFragments(
+    context: ProcessorContext,
+    query: string,
+    seenFragments: Map<string, string> = new Map()
+  ): Promise<Map<string, string>> {
+    for (const [fragmentName, value] of Object.entries(this.gqlData.fragments)) {
+      if (seenFragments.has(fragmentName) || query.indexOf(`...${fragmentName}`) < 0) {
+        continue;
+      }
+
+      const fragment = await getFragmentValue(context, fragmentName, value);
+      if (!fragment) {
+        continue;
+      }
+      seenFragments.set(fragmentName, fragment);
+
+      // need to check if the fragment references other fragments
+      await this.extractUsedFragments(context, fragment, seenFragments);
+    }
+
+    return seenFragments;
+  }
+}
+
+async function getFragmentValue(
+  context: ProcessorContext,
+  fragmentName: string,
+  value: GqlLoadData
+): Promise<string | undefined> {
+  if (utils.isString(value)) {
+    return value;
+  }
+  const result = await value(context);
+  if (result) {
+    return result;
+  }
+  const message = `query fragment ${fragmentName} not found`;
+  userInteractionProvider.showWarnMessage?.(message);
+  log.warn(message);
+  return undefined;
 }

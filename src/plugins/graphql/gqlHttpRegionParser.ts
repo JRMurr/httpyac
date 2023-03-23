@@ -3,8 +3,6 @@ import * as models from '../../models';
 import * as utils from '../../utils';
 import { GqlData, GqlAction } from './gqlAction';
 
-const EmptyLine = /^\s*$/u;
-
 export async function parseGraphql(
   getLineReader: models.getHttpLineGenerator,
   context: models.ParserContext
@@ -33,6 +31,7 @@ export async function parseGraphql(
     } else if (gqlContent.name) {
       gqlData.fragments[gqlContent.name] = gqlContent.gql;
     }
+
     return {
       nextParserLine: gqlContent.endLine,
       symbols: [
@@ -111,17 +110,21 @@ function matchGqlContent(
     endOffset: value.textLine.length,
   };
   const gqlLines: Array<string> = [value.textLine];
+
+  let numOpenBrackets = 1; // assuming the start line ends with an open bracket
+
   while (!next.done) {
     prevReader = {
       endLine: next.value.line,
       endOffset: next.value.textLine.length,
     };
-    if (EmptyLine.test(next.value.textLine)) {
+    numOpenBrackets += getBracketDiff(next.value.textLine);
+    if (numOpenBrackets === 0) {
       return {
         name,
         startLine: value.line,
         ...prevReader,
-        gql: utils.toMultiLineString(gqlLines),
+        gql: utils.toMultiLineString([...gqlLines, next.value.textLine]),
       };
     }
     gqlLines.push(next.value.textLine);
@@ -134,6 +137,22 @@ function matchGqlContent(
     ...prevReader,
     gql: utils.toMultiLineString(gqlLines),
   };
+}
+
+/**
+ * Returns the (count '{') - (count '}') for the line
+ */
+function getBracketDiff(line: string): number {
+  let numOpen = 0;
+  let numClose = 0;
+  for (const char of line) {
+    if (char === '{') {
+      numOpen++;
+    } else if (char === '}') {
+      numClose++;
+    }
+  }
+  return numOpen - numClose;
 }
 
 export interface GqlParserResult {

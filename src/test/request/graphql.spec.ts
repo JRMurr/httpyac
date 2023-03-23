@@ -49,17 +49,24 @@ query launchesQuery($limit: Int!){
     const mockedEndpoints = await localServer.forPost('/graphql').thenReply(200);
 
     await sendHttp(`
+
+fragment First on Stage {
+  cores {
+    flight
+    core {
+      reuse_count
+      status
+    }
+  }
+}
 fragment RocketParts on LaunchRocket {
   rocket_name
   first_stage {
-    cores {
-      flight
-      core {
-        reuse_count
-        status
-      }
-    }
+    ...First
   }
+}
+fragment LaunchSiteInfo on LaunchSite {
+  site_name_long
 }
 
 POST http://localhost:7002/graphql HTTP/1.1
@@ -71,7 +78,7 @@ query launchesQuery($limit: Int!){
     mission_name
     launch_date_local
     launch_site {
-      site_name_long
+      ...LaunchSiteInfo
     }
     rocket {
       ...RocketParts
@@ -86,9 +93,42 @@ query launchesQuery($limit: Int!){
 
     const requests = await mockedEndpoints.getSeenRequests();
     expect(requests[0].url).toBe('http://localhost:7002/graphql');
-    expect(await requests[0].body.getText()).toBe(
-      '{"query":"query launchesQuery($limit: Int!){\\n  launchesPast(limit: $limit) {\\n    mission_name\\n    launch_date_local\\n    launch_site {\\n      site_name_long\\n    }\\n    rocket {\\n      ...RocketParts\\n    }\\n  }\\n}\\nfragment RocketParts on LaunchRocket {\\n  rocket_name\\n  first_stage {\\n    cores {\\n      flight\\n      core {\\n        reuse_count\\n        status\\n      }\\n    }\\n  }\\n}","operationName":"launchesQuery","variables":{"limit":10}}'
-    );
+    const text = await requests[0].body.getText();
+    const expected = {
+      query: `query launchesQuery($limit: Int!){
+  launchesPast(limit: $limit) {
+    mission_name
+    launch_date_local
+    launch_site {
+      ...LaunchSiteInfo
+    }
+    rocket {
+      ...RocketParts
+    }
+  }
+}
+fragment RocketParts on LaunchRocket {
+  rocket_name
+  first_stage {
+    ...First
+  }
+}
+fragment First on Stage {
+  cores {
+    flight
+    core {
+      reuse_count
+      status
+    }
+  }
+}
+fragment LaunchSiteInfo on LaunchSite {
+  site_name_long
+}`,
+      operationName: 'launchesQuery',
+      variables: { limit: 10 },
+    };
+    expect(JSON.parse(text!)).toStrictEqual(expected);
   });
 
   it('only query', async () => {
