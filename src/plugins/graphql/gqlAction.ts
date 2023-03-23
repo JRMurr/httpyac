@@ -41,7 +41,7 @@ export class GqlAction {
 
       if (query) {
         const usedFragmentsMap = await this.extractUsedFragments(context, query);
-        const fragmentLines = Array.from(usedFragmentsMap, ([_key, value]) => value);
+        const fragmentLines = Array.from(usedFragmentsMap, keyVal => keyVal[1]);
 
         if (fragmentLines.length > 0) {
           query = utils.toMultiLineString([query, ...fragmentLines]);

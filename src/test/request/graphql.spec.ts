@@ -195,6 +195,96 @@ gql launchesQuery < ./graphql.gql
       '{"query":"\\nquery launchesQuery($limit: Int!){\\n  launchesPast(limit: $limit) {\\n    mission_name\\n    launch_date_local\\n    launch_site {\\n      site_name_long\\n    }\\n    rocket {\\n      rocket_name\\n      rocket_type\\n    }\\n    ships {\\n      name\\n      home_port\\n      image\\n    }\\n  }\\n}\\n        ","operationName":"launchesQuery","variables":{"limit":10}}'
     );
   });
+
+  it('imported fragments', async () => {
+    initFileProvider({
+      'fragments.gql': dedent`
+          fragment First on Stage {
+            cores {
+              flight
+              core {
+                reuse_count
+                status
+              }
+            }
+          }
+          fragment RocketParts on LaunchRocket {
+            rocket_name
+            first_stage {
+              ...First
+            }
+          }
+          fragment LaunchSiteInfo on LaunchSite {
+            site_name_long
+          }
+        `,
+    });
+
+    const mockedEndpoints = await localServer.forPost('/graphql').thenReply(200);
+    await sendHttp(dedent`
+
+      gql RocketParts < ./fragments.gql
+
+      POST http://localhost:7002/graphql
+      Content-Type: application/js
+
+      query launchesQuery($limit: Int!){
+        launchesPast(limit: $limit) {
+          mission_name
+          launch_date_local
+          launch_site {
+            ...LaunchSiteInfo
+          }
+          rocket {
+            ...RocketParts
+          }
+        }
+      }
+
+      {
+          "limit": 10
+      }
+    `);
+
+    const requests = await mockedEndpoints.getSeenRequests();
+    expect(requests[0].url).toBe('http://localhost:7002/graphql');
+    const body = await requests[0].body.getJson();
+    expect(body).toStrictEqual({
+      query: dedent`
+        query launchesQuery($limit: Int!){
+          launchesPast(limit: $limit) {
+            mission_name
+            launch_date_local
+            launch_site {
+              ...LaunchSiteInfo
+            }
+            rocket {
+              ...RocketParts
+            }
+          }
+        }
+        fragment First on Stage {
+          cores {
+            flight
+            core {
+              reuse_count
+              status
+            }
+          }
+        }
+        fragment RocketParts on LaunchRocket {
+          rocket_name
+          first_stage {
+            ...First
+          }
+        }
+        fragment LaunchSiteInfo on LaunchSite {
+          site_name_long
+        }`,
+      operationName: 'launchesQuery',
+      variables: { limit: 10 },
+    });
+  });
   it('use graphql method', async () => {
     initFileProvider();
     const mockedEndpoints = await localServer.forPost('/graphql').thenReply(200);
